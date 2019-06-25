@@ -2,3 +2,4 @@
 *.pem
 vendor
 compose.lock
+__pycache__
