@@ -3,3 +3,4 @@
 vendor
 compose.lock
 __pycache__
+config.py
