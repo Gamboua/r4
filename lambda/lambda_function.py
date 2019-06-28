@@ -41,7 +41,8 @@ def lambda_handler(event, context):
     redis_conn = redis.Redis(
         host=CACHE['host'],
         port=6379,
-        db=0
+        db=0,
+        socket_connect_timeout=1
     )
 
     if not query_params['domain'] or not query_params['id']:
@@ -49,16 +50,18 @@ def lambda_handler(event, context):
     else:
         query = f'dataFp:{query_params["domain"]}{query_params["id"]}{mobile_detect}'.encode('utf-8')
 
-        rows = json.loads(redis_conn.get(
+        rows = redis_conn.get(
             hashlib.md5(query).hexdigest()
-        ))
+        )
 
         if not rows:
+
             db = mysql.connector.connect(
                 host=DATABASE['host'],
                 user=DATABASE['user'],
                 passwd=DATABASE['passwd'],
-                db=DATABASE['db']
+                db=DATABASE['db'],
+                connection_timeout=1
             )
             cur = db.cursor(dictionary=True, buffered=True)
 
@@ -76,16 +79,20 @@ def lambda_handler(event, context):
 
     if not rows:
         return {
-            'statusCode': 200,
-            'headers': {'Content-Type': 'application/javascript;charset=UTF-8'},
-            'body': json.dumps('Hello from Lambda!')
+            'statusCode': 500,
+            'body': json.dumps('SAI PRA LÁ CAPIROTO')
         }
+
+    type(rows)
+
+    if isinstance(rows, str):
+        rows = json.loads(rows)
 
     templates = {}
     loop_list = []
 
     for key, row in enumerate(rows):
-
+        print(row)
         width = True
         height = True
 
@@ -165,15 +172,13 @@ def lambda_handler(event, context):
 
     response_template = RESPONSE_TEMPLATE.format(**data)
 
-    breakpoint()
-
     return {
         # 'Cookie': cookie,
         'statusCode': 200,
         'headers': {
             'Content-Type': 'application/javascript;charset=UTF-8',
         },
-        'body': json.dumps('Hello from Lambda!')
+        'body': response_template
     }
 
 
