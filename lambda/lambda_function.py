@@ -1,11 +1,12 @@
 import json
 import hashlib
 
-import MySQLdb
 import redis
+import mysql.connector
 
 from config import DATABASE
 from event_model import EVENT_MODEL
+from javascript_template import PHP_FUNCTION_LOOP, RESPONSE_TEMPLATE
 
 def lambda_handler(event, context):
 
@@ -46,39 +47,31 @@ def lambda_handler(event, context):
     if not query_params['domain'] or not query_params['id']:
         rows = []
     else:
-        query = f'dataFp:{query_params['domain']}{query_params['id']}{mobile_detect}'.encode('utf-8')
+        query = f'dataFp:{query_params["domain"]}{query_params["id"]}{mobile_detect}'.encode('utf-8')
 
-        rows = redis_conn.get(
+        rows = json.loads(redis_conn.get(
             hashlib.md5(query).hexdigest()
-        )
+        ))
 
         if not rows:
-            db = MySQLdb.connect(
+            db = mysql.connector.connect(
                 host=DATABASE['host'],
                 user=DATABASE['user'],
                 passwd=DATABASE['passwd'],
                 db=DATABASE['db']
             )
-            cur = db.cursor()
+            cur = db.cursor(dictionary=True, buffered=True)
 
-            query = f'SELECT {data_select}, {css_select}, c.identifier FROM premiums as a INNER JOIN domains as b ON a.domain_id = b.id INNER JOIN fpconfigs as c ON a.fpconfig_id = c.id WHERE b.domain = "{query_params['domain']}" AND b.status = 1 AND a.status = 1 AND user_id = {query_params['id']} AND {query_src}'
+            query = f'SELECT {data_select}, {css_select}, c.identifier FROM premiums as a INNER JOIN domains as b ON a.domain_id = b.id INNER JOIN fpconfigs as c ON a.fpconfig_id = c.id WHERE b.domain = "{query_params["domain"]}" AND b.status = 1 AND a.status = 1 AND user_id = {query_params["id"]} AND {query_src}'
 
             cur.execute(query)
             rows = cur.fetchall()
 
-            width, height, template_domain, week_hour, frequency, css, identifier = rows[0]
-
             redis_conn.set(
                 hashlib.md5(
-                    f'dataFp:{query_params['domain']}{query_params['id']}{mobile_detect}'.encode('utf-8')
+                    f'dataFp:{query_params["domain"]}{query_params["id"]}{mobile_detect}'.encode('utf-8')
                 ).hexdigest(),
-                json.dumps({
-                    'template_domain': template_domain,
-                    'week_hour': week_hour,
-                    'frequency': frequency,
-                    'css': css,
-                    'identifier': identifier
-                })
+                json.dumps(rows)
             )
 
     if not rows:
@@ -89,72 +82,97 @@ def lambda_handler(event, context):
         }
 
     templates = {}
+    loop_list = []
 
     for key, row in enumerate(rows):
-        result = {
-            'width': row[0],
-            'height': row[1],
-            'template_domain': row[2],
-            'week_hour': row[3],
-            'frequency': row[4],
-            'css': row[5],
-            'identifier': row[6]
-        }
 
-        width = False if query_params['width'] < result['width'] else False
-        height = False if query_params['height'] < result['height'] else False
+        width = True
+        height = True
+
+        if row['width']:
+            width = False if query_params['width'] < row['width'] else True
+
+        if row['height']:
+            height = False if query_params['height'] < row['height'] else True
 
         if height and width:
-            # TODO precisa ter um exemplo com a chave template_domain_mobile
             if mobile_detect == 'mobile':
-                templates[key]['html'] = json.dumps()
-
-            templates[key]['css'] = json.dumps(result['css'])
-            templates[key]['identifier'] = json.dumps(result['identifier'])
-            templates[key]['first_view'] = False
-            frequencia = []
-            templates[key]['show'] = True
-
-            if not frequency:
-                frequencia[f'__{result['identifier']}']['_qt'] = 0
-                frequencia[f'__{result['identifier']}']['tz'] = tz
-                # @TODO retornar cookie
-                # r4_frequency : json.dumps(frequencia), expires 1 mes
+                html = json.dumps(row['template_domain_mobile'])
+            elif mobile_detect == 'tablet':
+                html = json.dumps(row['template_domain_tablet'])
             else:
-                frequencia_config = json.dumps(result['frequency'])
+                html = json.dumps(row['template_domain'])
 
-                if not frequencia[f'__{result['identifier']}'] || not frequencia_config['minutos']:
-                    if not frequencia_config['minutos']:
-                        templates[key]['show'] = True
-                    else:
-                        templates[key]['first_view'] = True
-                        frequencia[f'__{query_params['identifier']}']['_qt'] = 0
-                        frequencia[f'__{query_params['identifier']}']['tz'] = tz
-                        # @TODO retornar cookie
-                        # r4_frequency : json.dumps(frequencia), expires 1 mes
-                else:
-                    temapltes[key]['first_view'] = True
-                    old_tz = frequencia[f'__{query_params['identifier']}']['tz']
+            templates[key] = {
+                'css': json.dumps(row['css']),
+                'identifier': json.dumps(row['identifier']),
+                'first_view': False,
+                'show': True,
+                'html': html
+            }
+            frequencia = []
 
-                    if not (old_tz + frequencia_config['minutos'] * 60) * 1000 > tz:
-                        frequencia[f'__{query_params['identifier']}']['_qt'] = 0
-                        frequencia[f'__{query_params['identifier']}']['tz'] = tz
-                        # @TODO retornar cookie
-                        # r4_frequency : json.dumps(frequencia), expires 1 ano
-                    else:
-                        if not frequencia_config['quantidade']:
-                            templates[key]['show'] = True
-                        elif frequencia[f'__{row['identifier']}']['_qt'] >= frequencia_config['quantidade']:
-                            templates[key]['show'] = False
+            #if 'frequency' not in row:
+            #    frequencia[f'__{row['identifier']}']['_qt'] = 0
+            #    frequencia[f'__{row['identifier']}']['tz'] = tz
+            #     # @TODO retornar cookie
+            #     # r4_frequency : json.dumps(frequencia), expires 1 mes
+            #else:
+            #    frequencia_config = json.dumps(row['frequency'])
+#
+            #    if not frequencia[f'__{row['identifier']}'] || not frequencia_config['minutos']:
+            #        if not frequencia_config['minutos']:
+            #            templates[key]['show'] = True
+            #         else:
+            #            templates[key]['first_view'] = True
+            #            frequencia[f'__{query_params['identifier']}']['_qt'] = 0
+            #            frequencia[f'__{query_params['identifier']}']['tz'] = tz
+            #            # @TODO retornar cookie
+            #            # r4_frequency : json.dumps(frequencia), expires 1 mes
+            #     else:
+            #        temapltes[key]['first_view'] = True
+            #        old_tz = frequencia[f'__{query_params['identifier']}']['tz']
+#
+            #        if not (old_tz + frequencia_config['minutos'] * 60) * 1000 > tz:
+            #            frequencia[f'__{query_params['identifier']}']['_qt'] = 0
+            #            frequencia[f'__{query_params['identifier']}']['tz'] = tz
+            #            # @TODO retornar cookie
+            #            # r4_frequency : json.dumps(frequencia), expires 1 ano
+            #        else:
+            #            if not frequencia_config['quantidade']:
+            #                templates[key]['show'] = True
+            #            elif frequencia[f'__{row['identifier']}']['_qt'] >= frequencia_config['quantidade']:
+            #                templates[key]['show'] = False
         else:
             del rows[key]
 
-    user_agent = event['headers']['User-Agent']
+        if 'show' in templates[key]:
+
+            data = {
+                'templates_key_css': templates[key]['css'],
+                'templates_key_identifier': templates[key]['identifier'],
+                'templates_key_html': templates[key]['html']
+            }
+
+            loop_list.append(
+                PHP_FUNCTION_LOOP.format(**data)
+            )
+
+            data = {
+                'loop': ''.join(loop_list),
+                'row_weekhour': row['week_hour']
+            }
+
+    response_template = RESPONSE_TEMPLATE.format(**data)
+
+    breakpoint()
 
     return {
         # 'Cookie': cookie,
         'statusCode': 200,
-        'headers': {'Content-Type': 'application/javascript;charset=UTF-8'},
+        'headers': {
+            'Content-Type': 'application/javascript;charset=UTF-8',
+        },
         'body': json.dumps('Hello from Lambda!')
     }
 
