@@ -76,23 +76,21 @@ def lambda_handler(event, context):
                 ).hexdigest(),
                 json.dumps(rows)
             )
+        else:
+            rows = json.loads(rows)
 
     if not rows:
         return {
             'statusCode': 500,
-            'body': json.dumps('SAI PRA LÁ CAPIROTO')
+            'headers': {'Content-Type': 'application/javascript;charset=UTF-8'},
+            'body': 'SAI PRA LA CAPIROTO'
         }
-
-    type(rows)
-
-    if isinstance(rows, str):
-        rows = json.loads(rows)
 
     templates = {}
     loop_list = []
 
     for key, row in enumerate(rows):
-        print(row)
+
         width = True
         height = True
 
