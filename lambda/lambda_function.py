@@ -4,7 +4,7 @@ import hashlib
 import redis
 import mysql.connector
 
-from config import DATABASE
+from config import DATABASE, CACHE
 from event_model import EVENT_MODEL
 from javascript_template import PHP_FUNCTION_LOOP, RESPONSE_TEMPLATE
 
@@ -39,7 +39,7 @@ def lambda_handler(event, context):
     tz = query_params['date_time']
 
     redis_conn = redis.Redis(
-        host='localhost',
+        host=CACHE['host'],
         port=6379,
         db=0
     )
