@@ -13,6 +13,7 @@ EVENT_MODEL = {
       'CloudFront-Is-Tablet-Viewer':'False',
       'CloudFront-Viewer-Country':'BR',
       'Host':'r4you.co',
+      'Referer': 'https://r4you.co/testes/fp.php',
       'upgrade-insecure-requests':'1',
       'User-Agent':'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.77 Safari/537.36',
       'Via':'2.0 2e55cece113d228d3967805a56664e6b.cloudfront.net (CloudFront)',

@@ -1,5 +1,6 @@
 import json
 import hashlib
+from urllib.parse import urlparse
 
 import redis
 import mysql.connector
@@ -9,6 +10,8 @@ from event_model import EVENT_MODEL
 from javascript_template import PHP_FUNCTION_LOOP, RESPONSE_TEMPLATE
 
 def lambda_handler(event, context):
+
+    print(event)
 
     mobile_detect = False
 
@@ -32,17 +35,15 @@ def lambda_handler(event, context):
     css_select = 'REPLACE(REPLACE(c.css, "\r\n",""),"\t","") as css'
 
     query_params = {
-        'domain': event['headers']['Host'],
+        'domain': event['headers']['Referer'] or None,
         'id': event['queryStringParameters']['cliente'],
-        'date_time': event['requestContext']['requestTime'],
+        'tz': event['queryStringParameters']['tz'],
         'width': event['queryStringParameters']['scw'],
-        'height': event['queryStringParameters']['sch']
+        'height': event['queryStringParameters']['sch'],
+
     }
 
     print(f'DADOS DO CLIENTE: {query_params["domain"]} | {query_params["id"]}')
-
-    # @TODO extrair timezone do horario
-    tz = query_params['date_time']
 
     try:
         redis_conn = redis.Redis(
@@ -61,6 +62,9 @@ def lambda_handler(event, context):
             'body': 'SAI PRA LA CAPIROTO'
         }
     else:
+        domain = urlparse(event['headers']['Referer'])
+        query_params['domain'] = domain.netloc
+
         query = f'dataFp:{query_params["domain"]}{query_params["id"]}{mobile_detect}'.encode('utf-8')
 
         print('RECUPERANDO DADOS DE CACHE...')
