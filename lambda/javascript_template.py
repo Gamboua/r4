@@ -66,7 +66,7 @@ R4you.prototype.checkEnabled = function(){{
     var d = new Date();
     var w = d.getDay();
     var n = d.getHours();
-    var eh = {row_weekhour}>;
+    var eh = {row_weekhour};
     console.log(eh[w][n] == 1);
     return eh[w][n] == 1;
 }}
