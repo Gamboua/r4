@@ -123,10 +123,10 @@ def lambda_handler(event, context):
 
         print('CHECAGEM  DE DIMENSOES...')
         if row['width']:
-            width = False if query_params['width'] < row['width'] else True
+            width = False if int(query_params['width']) < int(row['width']) else True
 
         if row['height']:
-            height = False if query_params['height'] < row['height'] else True
+            height = False if int(query_params['height']) < int(row['height']) else True
 
         print('CHECAGEM FEITA.')
 
