@@ -185,10 +185,8 @@ def lambda_handler(event, context):
             #                templates[key]['show'] = True
             #            elif frequencia[f'__{row['identifier']}']['_qt'] >= frequencia_config['quantidade']:
             #                templates[key]['show'] = False
-        else:
-            del rows[key]
 
-        if 'show' in templates[key]:
+        if templates:
             data = {
                 'templates_key_css': templates[key]['css'],
                 'templates_key_identifier': templates[key]['identifier'],
