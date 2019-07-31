@@ -1,5 +1,6 @@
 import json
 import hashlib
+import time
 from urllib.parse import urlparse
 
 import redis
@@ -156,13 +157,15 @@ def lambda_handler(event, context):
 
             if not row['frequency']:
                 frequencia = {
-                    f'__{row['identifier']}': {
+                    f'__{row["identifier"]}': {
                         '_qt': 0,
-                        'tz': tz
+                        'tz': query_params['tz']
                     }
                 }
-                 # @TODO retornar cookie
-                r4_frequency : json.dumps(frequencia), expires 1 mes
+
+                expires = datetime.datetime.utcnow() + datetime.timedelta(days=30)
+                expires = expires.strftime("%a, %d %b %Y %H:%M:%S GMT")
+                cookie = f'mycookiee=test; domain={query_params["domain"]}; Expires={expires}'
             #else:
             #    frequencia_config = json.dumps(row['frequency'])
 #
@@ -215,12 +218,19 @@ def lambda_handler(event, context):
 
     print('DONE. RETORNANDO TEMPLATE.')
 
+    headers = {
+        'Content-Type': 'application/javascript;charset=UTF-8'
+    }
+
+    if cookie:
+        headers.update({'Set-Cookie': cookie)
+    else:
+        headers.update({'Set-Cookie': 'testandocookie=teste;'})
+
     return {
         # 'Cookie': cookie,
         'statusCode': 200,
-        'headers': {
-            'Content-Type': 'application/javascript;charset=UTF-8',
-        },
+        'headers': headers,
         'body': response_template
     }
 
