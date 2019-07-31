@@ -112,11 +112,15 @@ def lambda_handler(event, context):
             }
             frequencia = []
 
-            #if 'frequency' not in row:
-            #    frequencia[f'__{row['identifier']}']['_qt'] = 0
-            #    frequencia[f'__{row['identifier']}']['tz'] = tz
-            #     # @TODO retornar cookie
-            #     # r4_frequency : json.dumps(frequencia), expires 1 mes
+            if not row['frequency']:
+                frequencia = {
+                    f'__{row['identifier']}': {
+                        '_qt': 0,
+                        'tz': tz
+                    }
+                }
+                 # @TODO retornar cookie
+                r4_frequency : json.dumps(frequencia), expires 1 mes
             #else:
             #    frequencia_config = json.dumps(row['frequency'])
 #
