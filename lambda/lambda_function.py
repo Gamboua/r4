@@ -1,16 +1,21 @@
 import json
 import hashlib
+from urllib.parse import urlparse
 
 import redis
 import mysql.connector
 
-from config import DATABASE
+from config import DATABASE, CACHE
 from event_model import EVENT_MODEL
 from javascript_template import PHP_FUNCTION_LOOP, RESPONSE_TEMPLATE
 
 def lambda_handler(event, context):
 
+    print(event)
+
     mobile_detect = False
+
+    print('DETECTANDO DISPOSITIVO...')
 
     if event['headers']['CloudFront-Is-Tablet-Viewer'] == 'true':
         mobile_detect = 'tablet'
@@ -25,75 +30,105 @@ def lambda_handler(event, context):
         query_src = 'a.desktop=1'
         data_select = 'a.desktop_min_resolution_width as width,a.desktop_min_resolution_heigth as height, REPLACE(REPLACE(a.template_domain, "\r\n",""),"\t","") as template_domain,a.week_hour,a.frequency'
 
+    print(f'DISPOSITIVO DETECTADO: {mobile_detect}')
+
     css_select = 'REPLACE(REPLACE(c.css, "\r\n",""),"\t","") as css'
 
     query_params = {
-        'domain': event['headers']['Host'],
+        'domain': event['headers']['Referer'] or None,
         'id': event['queryStringParameters']['cliente'],
-        'date_time': event['requestContext']['requestTime'],
+        'tz': event['queryStringParameters']['tz'],
         'width': event['queryStringParameters']['scw'],
-        'height': event['queryStringParameters']['sch']
+        'height': event['queryStringParameters']['sch'],
+
     }
 
-    # @TODO extrair timezone do horario
-    tz = query_params['date_time']
+    print(f'DADOS DO CLIENTE: {query_params["domain"]} | {query_params["id"]}')
 
-    redis_conn = redis.Redis(
-        host='localhost',
-        port=6379,
-        db=0
-    )
+    try:
+        redis_conn = redis.Redis(
+            host=CACHE['host'],
+            port=6379,
+            db=0,
+            socket_connect_timeout=1
+        )
+    except Exception as e:
+        print(f'Falha na conexao com Redis: {e}')
 
     if not query_params['domain'] or not query_params['id']:
-        rows = []
+        return {
+            'statusCode': 500,
+            'headers': {'Content-Type': 'application/javascript;charset=UTF-8'},
+            'body': 'SAI PRA LA CAPIROTO'
+        }
     else:
+        domain = urlparse(event['headers']['Referer'])
+        query_params['domain'] = domain.netloc
+
         query = f'dataFp:{query_params["domain"]}{query_params["id"]}{mobile_detect}'.encode('utf-8')
 
-        rows = json.loads(redis_conn.get(
+        print('RECUPERANDO DADOS DE CACHE...')
+
+        rows = redis_conn.get(
             hashlib.md5(query).hexdigest()
-        ))
+        )
 
         if not rows:
+            print('DADOS DE CACHE NÃO ENCONTRADOS')
+            print('INICIANDO BUSCA NO BANCO...')
             db = mysql.connector.connect(
                 host=DATABASE['host'],
                 user=DATABASE['user'],
                 passwd=DATABASE['passwd'],
-                db=DATABASE['db']
+                db=DATABASE['db'],
+                connection_timeout=1
             )
             cur = db.cursor(dictionary=True, buffered=True)
 
             query = f'SELECT {data_select}, {css_select}, c.identifier FROM premiums as a INNER JOIN domains as b ON a.domain_id = b.id INNER JOIN fpconfigs as c ON a.fpconfig_id = c.id WHERE b.domain = "{query_params["domain"]}" AND b.status = 1 AND a.status = 1 AND user_id = {query_params["id"]} AND {query_src}'
-
+            print(query)
             cur.execute(query)
             rows = cur.fetchall()
 
-            redis_conn.set(
-                hashlib.md5(
-                    f'dataFp:{query_params["domain"]}{query_params["id"]}{mobile_detect}'.encode('utf-8')
-                ).hexdigest(),
-                json.dumps(rows)
-            )
-
-    if not rows:
-        return {
-            'statusCode': 200,
-            'headers': {'Content-Type': 'application/javascript;charset=UTF-8'},
-            'body': json.dumps('Hello from Lambda!')
-        }
+            if rows:
+                print('DADOS ENCONTRADOS NO BANCO.')
+                print('SALVANDO DADOS EM CACHE...')
+                redis_conn.set(
+                    hashlib.md5(
+                        f'dataFp:{query_params["domain"]}{query_params["id"]}{mobile_detect}'.encode('utf-8')
+                    ).hexdigest(),
+                    json.dumps(rows)
+                )
+                print('DADOS SALVOS EM CACHE')
+            else:
+                print('DADOS NAO ENCONTRADOS NO BANCO')
+                return {
+                    'statusCode': 500,
+                    'headers': {'Content-Type': 'application/javascript;charset=UTF-8'},
+                    'body': 'SAI PRA LA CAPIROTO'
+                }
+        else:
+            print('DADOS ENCONTRADOS NO CACHE')
+            rows = json.loads(rows)
 
     templates = {}
     loop_list = []
+
+    print('INICIANDO CRIAÇÃO DE TEMPLATE')
 
     for key, row in enumerate(rows):
 
         width = True
         height = True
 
+        print('CHECAGEM  DE DIMENSOES...')
         if row['width']:
-            width = False if query_params['width'] < row['width'] else True
+            width = False if int(query_params['width']) < int(row['width']) else True
 
         if row['height']:
-            height = False if query_params['height'] < row['height'] else True
+            height = False if int(query_params['height']) < int(row['height']) else True
+
+        print('CHECAGEM FEITA.')
 
         if height and width:
             if mobile_detect == 'mobile':
@@ -103,6 +138,8 @@ def lambda_handler(event, context):
             else:
                 html = json.dumps(row['template_domain'])
 
+            print('CRIANDO DICIONARIOS DO TEMPLATE')
+
             templates[key] = {
                 'css': json.dumps(row['css']),
                 'identifier': json.dumps(row['identifier']),
@@ -110,6 +147,11 @@ def lambda_handler(event, context):
                 'show': True,
                 'html': html
             }
+
+            print('DICIONARIO CRIADO: ')
+            print(templates)
+            print('---------------')
+
             frequencia = []
 
             if not row['frequency']:
@@ -147,29 +189,31 @@ def lambda_handler(event, context):
             #                templates[key]['show'] = True
             #            elif frequencia[f'__{row['identifier']}']['_qt'] >= frequencia_config['quantidade']:
             #                templates[key]['show'] = False
-        else:
-            del rows[key]
 
-        if 'show' in templates[key]:
-
+        if templates:
             data = {
                 'templates_key_css': templates[key]['css'],
                 'templates_key_identifier': templates[key]['identifier'],
                 'templates_key_html': templates[key]['html']
             }
 
+            print('INTERPOLANDO HTML ')
+
             loop_list.append(
                 PHP_FUNCTION_LOOP.format(**data)
             )
+            
+            print('INTERPOLAÇÃO CONCLUIDA')
 
-            data = {
-                'loop': ''.join(loop_list),
-                'row_weekhour': row['week_hour']
-            }
+    data = {
+        'loop': ''.join(loop_list),
+        'row_weekhour': row['week_hour']
+    }
 
+    print('ADICIONANDO HTML NO TEMPLATE')
     response_template = RESPONSE_TEMPLATE.format(**data)
 
-    breakpoint()
+    print('DONE. RETORNANDO TEMPLATE.')
 
     return {
         # 'Cookie': cookie,
@@ -177,7 +221,7 @@ def lambda_handler(event, context):
         'headers': {
             'Content-Type': 'application/javascript;charset=UTF-8',
         },
-        'body': json.dumps('Hello from Lambda!')
+        'body': response_template
     }
 
 
